@@ -175,6 +175,11 @@ export async function runPatchJob(options = {}) {
 
 // Direct execution entry point
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve('src/patch-job.js')) {
+  if (!process.env.FIX11Y_APP_ID) {
+    console.error('[FATAL] FIX11Y_APP_ID is missing or empty.');
+    console.error('[FATAL] Ensure FIX11Y_APP_ID is configured under GitHub Actions "Variables" tab (referenced as vars.FIX11Y_APP_ID), NOT the "Secrets" tab.');
+    process.exit(1);
+  }
   runPatchJob().catch((err) => {
     console.error(`[ERROR] Patch job failed: ${err.message}`);
     process.exit(1);

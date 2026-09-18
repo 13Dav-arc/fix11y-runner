@@ -213,6 +213,11 @@ export async function runResolveJob(options = {}) {
 
 // Direct execution entry point
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve('src/resolve-job.js')) {
+  if (!process.env.FIX11Y_APP_ID) {
+    console.error('[FATAL] FIX11Y_APP_ID is missing or empty.');
+    console.error('[FATAL] Ensure FIX11Y_APP_ID is configured under GitHub Actions "Variables" tab (referenced as vars.FIX11Y_APP_ID), NOT the "Secrets" tab.');
+    process.exit(1);
+  }
   runResolveJob().then(() => {
     process.exit(0);
   }).catch((err) => {
