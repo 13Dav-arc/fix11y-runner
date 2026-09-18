@@ -1,0 +1,122 @@
+name: fix11y Remediation Runner
+
+on:
+  repository_dispatch:
+    types: [fix11y-scan]
+
+permissions:
+  contents: read
+
+jobs:
+  patch:
+    name: 1. Audit & Patch (Isolated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      has_patches: ${{ steps.patch.outputs.has_patches }}
+    steps:
+      - name: Checkout runner code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Patch Job
+        id: patch
+        env:
+          FIX11Y_APP_PRIVATE_KEY: ${{ secrets.FIX11Y_APP_PRIVATE_KEY }}
+          FIX11Y_APP_ID: ${{ vars.FIX11Y_APP_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: node src/patch-job.js
+
+      - name: Upload Patched Workspace
+        if: steps.patch.outputs.has_patches == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-workspace-${{ github.event.client_payload.runId }}
+          path: workspace-artifact/
+          retention-days: 1
+
+  verify:
+    name: 2. Build Verification (Zero Secrets)
+    needs: patch
+    if: needs.patch.outputs.has_patches == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Harden Runner Egress
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            nodejs.org:443
+            registry.npmjs.org:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - name: Checkout runner code
+        uses: actions/checkout@v4
+
+      - name: Download Patched Workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: patched-workspace-${{ github.event.client_payload.runId }}
+          path: ./target-repo
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Execute Build & Test
+        id: verify
+        run: node src/verify-job.js ./target-repo
+
+      - name: Upload Verification Manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-result-${{ github.event.client_payload.runId }}
+          path: verification-result.json
+          retention-days: 1
+
+  resolve:
+    name: 3. Resolve & Open PR
+    needs: [patch, verify]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout runner code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download Artifacts
+        if: needs.patch.outputs.has_patches == 'true'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: ./artifacts
+
+      - name: Evaluate Outcome & Resolve Status
+        env:
+          FIX11Y_APP_PRIVATE_KEY: ${{ secrets.FIX11Y_APP_PRIVATE_KEY }}
+          FIX11Y_APP_ID: ${{ vars.FIX11Y_APP_ID }}
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+          HAS_PATCHES: ${{ needs.patch.outputs.has_patches }}
+          PATCH_RESULT: ${{ needs.patch.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: node src/resolve-job.js

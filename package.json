@@ -1,0 +1,21 @@
+{
+  "name": "@fix11y/runner",
+  "version": "0.1.0",
+  "description": "Hardened 3-job GitHub Actions remediation runner for fix11y",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "actions-runner",
+    "wcag",
+    "fix11y"
+  ],
+  "author": "fix11y",
+  "license": "MIT"
+}
