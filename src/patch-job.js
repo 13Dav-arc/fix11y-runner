@@ -42,6 +42,12 @@ export async function runPatchJob(options = {}) {
   const targetDir = options.targetDir || payload.targetDirectory || '.';
   const geminiApiKey = options.geminiApiKey ?? process.env.GEMINI_API_KEY;
 
+  if (process.env.GITHUB_ACTIONS === 'true' && !process.env.FIX11Y_APP_ID) {
+    console.error('[FATAL] FIX11Y_APP_ID is missing or empty.');
+    console.error('[FATAL] Ensure FIX11Y_APP_ID is configured under GitHub Actions "Variables" tab (referenced as vars.FIX11Y_APP_ID), NOT the "Secrets" tab.');
+    process.exit(1);
+  }
+
   console.log('[START] Beginning fix11y isolated audit and surgical patching...');
   console.log(`[INFO] Scanning directory: ${path.resolve(targetDir)}`);
 

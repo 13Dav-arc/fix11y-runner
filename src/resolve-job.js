@@ -60,6 +60,12 @@ export async function runResolveJob(options = {}) {
   const appId = options.appId ?? process.env.FIX11Y_APP_ID;
   const privateKey = options.privateKey ?? process.env.FIX11Y_APP_PRIVATE_KEY;
 
+  if (process.env.GITHUB_ACTIONS === 'true' && !options.octokit && !appId) {
+    console.error('[FATAL] FIX11Y_APP_ID is missing or empty.');
+    console.error('[FATAL] Ensure FIX11Y_APP_ID is configured under GitHub Actions "Variables" tab (referenced as vars.FIX11Y_APP_ID), NOT the "Secrets" tab.');
+    process.exit(1);
+  }
+
   console.log('[START] Beginning resolution of fix11y remediation run...');
   console.log(`[INFO] Context: ${owner}/${repo}@${sha.slice(0, 7)}`);
   console.log(`[INFO] Statuses: patch=${patchResult}, verify=${verifyResult}, hasPatches=${hasPatches}`);
