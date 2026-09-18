@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { parse, evaluateRules, applyPatches, createUnifiedDiff } from './core/index.js';
 
 /**
@@ -39,7 +40,27 @@ function setGithubOutput(key, value) {
 export async function runPatchJob(options = {}) {
   const payloadRaw = options.payload || process.env.CLIENT_PAYLOAD || '{}';
   const payload = typeof payloadRaw === 'string' ? JSON.parse(payloadRaw) : payloadRaw;
-  const targetDir = options.targetDir || payload.targetDirectory || '.';
+  const owner = payload.owner;
+  const repo = payload.repo;
+  const sha = payload.sha;
+
+  let targetDir = options.targetDir || payload.targetDirectory;
+  if (!targetDir && owner && repo) {
+    targetDir = path.resolve('target-repo');
+    if (!fs.existsSync(targetDir)) {
+      console.log(`[INFO] Cloning target repository ${owner}/${repo} at ${sha || 'HEAD'}...`);
+      execSync(`git clone https://github.com/${owner}/${repo}.git "${targetDir}"`, { stdio: 'inherit' });
+      if (sha && sha !== 'HEAD') {
+        try {
+          execSync(`git checkout ${sha}`, { cwd: targetDir, stdio: 'inherit' });
+        } catch (e) {
+          console.warn(`[WARNING] Could not checkout commit ${sha}: ${e.message}`);
+        }
+      }
+    }
+  } else if (!targetDir) {
+    targetDir = '.';
+  }
   const geminiApiKey = options.geminiApiKey ?? process.env.GEMINI_API_KEY;
 
   if (process.env.GITHUB_ACTIONS === 'true' && !process.env.FIX11Y_APP_ID) {
@@ -144,6 +165,17 @@ export async function runPatchJob(options = {}) {
   if (hasPatches) {
     if (!fs.existsSync(artifactDir)) {
       fs.mkdirSync(artifactDir, { recursive: true });
+    }
+
+    // Copy patched target directory contents into workspace-artifact so verify & resolve jobs receive it
+    if (targetDir !== '.' && fs.existsSync(targetDir)) {
+      const entries = fs.readdirSync(targetDir);
+      for (const entry of entries) {
+        const srcPath = path.join(targetDir, entry);
+        if (path.resolve(srcPath) !== path.resolve(artifactDir) && entry !== 'node_modules' && entry !== '.git') {
+          fs.cpSync(srcPath, path.join(artifactDir, entry), { recursive: true });
+        }
+      }
     }
 
     const manifest = {

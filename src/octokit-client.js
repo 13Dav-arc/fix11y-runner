@@ -92,6 +92,29 @@ export class OctokitClient {
   }
 
   /**
+   * Looks up repository installation and returns an installation access token.
+   */
+  async getRepoInstallationToken(owner, repo) {
+    const jwt = generateAppJwt(this.appId, this.privateKey);
+    const res = await fetch(`${this.baseUrl}/repos/${owner}/${repo}/installation`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'fix11y-runner/1.0',
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to find installation for ${owner}/${repo} (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    return await this.getInstallationToken(data.id);
+  }
+
+  /**
    * Updates an existing GitHub Check Run.
    */
   async updateCheckRun({ owner, repo, token, checkRunId, status, conclusion, output }) {

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { OctokitClient } from './octokit-client.js';
 import { formatPrBody } from './pr-formatter.js';
 
@@ -73,10 +74,14 @@ export async function runResolveJob(options = {}) {
   let octokit = options.octokit;
   let token = options.token;
 
-  if (!octokit && appId && privateKey && installationId) {
+  if (!octokit && appId && privateKey) {
     try {
       const client = new OctokitClient({ appId, privateKey });
-      token = await client.getInstallationToken(installationId);
+      if (installationId) {
+        token = await client.getInstallationToken(installationId);
+      } else if (owner && repo) {
+        token = await client.getRepoInstallationToken(owner, repo);
+      }
       octokit = client;
     } catch (err) {
       console.warn(`[WARNING] Could not mint App installation token: ${err.message}`);
@@ -178,10 +183,53 @@ export async function runResolveJob(options = {}) {
   const branchName = `fix11y/remediation-${sha.slice(0, 7)}`;
   const prTitle = `fix11y: Automated accessibility remediation for commit ${sha.slice(0, 7)}`;
 
+  let createdPrUrl = null;
   if (octokit && token) {
     try {
+      // Find patched workspace directory containing the remediated files
+      const manifestPath = findArtifactFile('patch-manifest.json');
+      const artifactDir = manifestPath ? path.dirname(manifestPath) : null;
+
+      // In real runner execution, clone, commit patched files, and push branch before opening PR
+      if (artifactDir && !options.octokit && owner && repo) {
+        console.log(`[INFO] Preparing to push remediated branch ${branchName} to ${owner}/${repo}...`);
+        const pushDir = path.resolve('resolved-repo');
+        if (fs.existsSync(pushDir)) {
+          fs.rmSync(pushDir, { recursive: true, force: true });
+        }
+
+        const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+        execSync(`git clone "${cloneUrl}" "${pushDir}"`, { stdio: 'pipe' });
+
+        if (sha && sha !== 'HEAD') {
+          try {
+            execSync(`git checkout ${sha}`, { cwd: pushDir, stdio: 'pipe' });
+          } catch {}
+        }
+
+        execSync(`git checkout -B "${branchName}"`, { cwd: pushDir, stdio: 'pipe' });
+
+        // Copy patched files from artifactDir into pushDir (excluding manifest files)
+        fs.cpSync(artifactDir, pushDir, {
+          recursive: true,
+          filter: (src) => !src.endsWith('patch-manifest.json') && !src.endsWith('verification-result.json'),
+        });
+
+        execSync(`git config user.name "fix11y[bot]"`, { cwd: pushDir, stdio: 'pipe' });
+        execSync(`git config user.email "fix11y[bot]@users.noreply.github.com"`, { cwd: pushDir, stdio: 'pipe' });
+        execSync(`git add -A`, { cwd: pushDir, stdio: 'pipe' });
+
+        try {
+          execSync(`git commit -m "fix(a11y): automated surgical accessibility remediation"`, { cwd: pushDir, stdio: 'pipe' });
+          execSync(`git push "${cloneUrl}" "${branchName}" --force`, { cwd: pushDir, stdio: 'inherit' });
+          console.log(`[SUCCESS] Remediated branch pushed to GitHub: ${branchName}`);
+        } catch (commitErr) {
+          console.log(`[INFO] Commit or push note: ${commitErr.message}`);
+        }
+      }
+
       console.log(`[INFO] Creating Pull Request on ${owner}/${repo}...`);
-      await octokit.createPullRequest({
+      const pr = await octokit.createPullRequest({
         owner,
         repo,
         token,
@@ -190,9 +238,36 @@ export async function runResolveJob(options = {}) {
         head: branchName,
         base: payload.ref || 'main',
       });
-      console.log('[SUCCESS] Pull Request successfully opened!');
+      createdPrUrl = pr?.html_url || null;
+      console.log(`[SUCCESS] Pull Request successfully opened! URL: ${createdPrUrl || 'OK'}`);
     } catch (err) {
       console.warn(`[WARNING] PR creation note: ${err.message}`);
+    }
+  }
+
+  // Update Upstash Redis progress record if credentials and runId are present
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN && payload.runId) {
+    try {
+      const upstashUrl = process.env.UPSTASH_REDIS_REST_URL.replace(/\/$/, '');
+      const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+      const progressPayload = {
+        status: 'success',
+        repo: `${owner}/${repo}`,
+        sha,
+        targetVisibility: 'public',
+        step: 'open_pr',
+        category: 'none',
+        filesDone: manifest.appliedPatches?.length || 0,
+        filesTotal: manifest.appliedPatches?.length || 0,
+        prUrl: createdPrUrl,
+        updatedAt: new Date().toISOString(),
+      };
+      await fetch(`${upstashUrl}/SETEX/fix11y:run:${payload.runId}/3600/${encodeURIComponent(JSON.stringify(progressPayload))}`, {
+        headers: { Authorization: `Bearer ${upstashToken}` },
+      });
+      console.log(`[SUCCESS] Updated Upstash progress record for run ${payload.runId}`);
+    } catch (upstashErr) {
+      console.warn(`[WARNING] Could not update Upstash run progress: ${upstashErr.message}`);
     }
   }
 
@@ -208,6 +283,7 @@ export async function runResolveJob(options = {}) {
     category: 'none',
     prTitle,
     prBody,
+    prUrl: createdPrUrl,
   };
 }
 

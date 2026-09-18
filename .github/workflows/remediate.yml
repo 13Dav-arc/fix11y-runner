@@ -115,6 +115,8 @@ jobs:
         env:
           FIX11Y_APP_PRIVATE_KEY: ${{ secrets.FIX11Y_APP_PRIVATE_KEY }}
           FIX11Y_APP_ID: ${{ vars.FIX11Y_APP_ID }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
           HAS_PATCHES: ${{ needs.patch.outputs.has_patches }}
           PATCH_RESULT: ${{ needs.patch.result }}
