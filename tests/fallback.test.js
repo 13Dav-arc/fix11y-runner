@@ -15,8 +15,8 @@ test('deterministic fallback - applies safe and caution rules cleanly without GE
     const htmlFixture = `<!DOCTYPE html>
 <html>
 <body>
-  <!-- Safe violation: missing alt -->
-  <img src="photo.jpg">
+  <!-- Safe violation: missing alt on decorative divider -->
+  <img src="decorative-divider.png">
 
   <!-- Caution violation: button semantics -->
   <div onclick="doSomething()">Click Me</div>
@@ -88,3 +88,42 @@ test('pr-formatter - renders explicit missing-key notice for unresolved AI issue
   assert.match(prBody, /complex-graphic-alt/);
   assert.match(prBody, /Awaiting human review or Gemini API key/);
 });
+
+test('pr-formatter - renders manual review notice for zero-patch caution issues (e.g. unknown classification)', () => {
+  const prBody = formatPrBody({
+    commitSha: 'b2c3d4e5f6a1',
+    appliedPatches: [
+      {
+        file: 'index.html',
+        ruleId: 'img-alt',
+        wcag: '1.1.1',
+        safety: 'safe',
+        message: 'Decorative <img> element is missing an "alt" attribute.',
+        line: 12,
+      },
+    ],
+    unresolvedAiIssues: [
+      {
+        file: 'index.html',
+        ruleId: 'img-alt',
+        wcag: '1.1.1',
+        safety: 'caution',
+        message: '<img> element has no alt attribute and cannot be deterministically classified as decorative or meaningful.',
+        line: 45,
+        requiresAi: false,
+      },
+    ],
+    diffSummary: '+ <img src="divider.png" alt="">',
+    testSummary: 'All tests passed cleanly',
+  });
+
+  // Overview table should show manual review item
+  assert.match(prBody, /Manual Review Items \(No Patch\)/);
+  assert.match(prBody, /1/);
+
+  // Manual Review section
+  assert.match(prBody, /### ⚠️ Manual Review Items \(No Auto-Patch Applied\)/);
+  assert.match(prBody, /cannot be deterministically classified as decorative or meaningful/);
+  assert.match(prBody, /Manual review required \(no auto-patch\)/);
+});
+
