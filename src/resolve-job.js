@@ -68,6 +68,12 @@ export async function runResolveJob(options = {}) {
   }
 
   console.log('[START] Beginning resolution of fix11y remediation run...');
+  const authTier = payload.authTier || 'tier1_app';
+  const authTierNumber = payload.authTierNumber || 1;
+  const tierDisplay = authTierNumber === 1
+    ? '[auth] Using App-installation token (tier 1)'
+    : `[auth] Falling back to ${authTier} (tier ${authTierNumber})`;
+  console.log(tierDisplay);
   console.log(`[INFO] Context: ${owner}/${repo}@${sha.slice(0, 7)}`);
   console.log(`[INFO] Statuses: patch=${patchResult}, verify=${verifyResult}, hasPatches=${hasPatches}`);
 

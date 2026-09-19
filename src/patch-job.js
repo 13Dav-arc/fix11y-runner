@@ -44,6 +44,14 @@ export async function runPatchJob(options = {}) {
   const repo = payload.repo;
   const sha = payload.sha;
 
+  console.log('[START] Beginning fix11y remediation patch job...');
+  const authTier = payload.authTier || 'tier1_app';
+  const authTierNumber = payload.authTierNumber || 1;
+  const tierDisplay = authTierNumber === 1
+    ? '[auth] Using App-installation token (tier 1)'
+    : `[auth] Falling back to ${authTier} (tier ${authTierNumber})`;
+  console.log(tierDisplay);
+
   let targetDir = options.targetDir || payload.targetDirectory;
   if (!targetDir && owner && repo) {
     targetDir = path.resolve('target-repo');
