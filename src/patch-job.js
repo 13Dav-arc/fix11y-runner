@@ -152,7 +152,11 @@ export async function runPatchJob(options = {}) {
     const originalContent = fs.readFileSync(file, 'utf-8');
     if (content !== originalContent) {
       fs.writeFileSync(file, content, 'utf-8');
-      const fileDiff = createUnifiedDiff(originalContent, content, relativePath, relativePath);
+      const fileDiff = createUnifiedDiff(originalContent, content, {
+        fromFile: `a/${relativePath}`,
+        toFile: `b/${relativePath}`,
+        color: false,
+      });
       combinedDiff += (combinedDiff ? '\n' : '') + fileDiff;
     }
   }
