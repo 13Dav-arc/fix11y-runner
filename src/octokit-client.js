@@ -158,6 +158,32 @@ export class OctokitClient {
 
     if (!res.ok) {
       const errText = await res.text();
+      if (res.status === 422 && errText.toLowerCase().includes('already exists')) {
+        const listRes = await fetch(`${this.baseUrl}/repos/${owner}/${repo}/pulls?head=${owner}:${head}&state=open`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'fix11y-runner/1.0',
+          },
+        });
+        if (listRes.ok) {
+          const openPrs = await listRes.json();
+          if (openPrs.length > 0) {
+            const updateRes = await fetch(`${this.baseUrl}/repos/${owner}/${repo}/pulls/${openPrs[0].number}`, {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/vnd.github+json',
+                'User-Agent': 'fix11y-runner/1.0',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ title, body }),
+            });
+            if (updateRes.ok) return await updateRes.json();
+            return openPrs[0];
+          }
+        }
+      }
       throw new Error(`Failed to create Pull Request (${res.status}): ${errText}`);
     }
 
